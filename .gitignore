@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+encryption/latex/example.aux
+encryption/latex/example.dvi
+encryption/latex/example.out
+encryption/latex/example.pdf
+encryption/latex/example.sagetex.sage
+encryption/latex/example.sagetex.scmd
+encryption/latex/example.sagetex.sout
