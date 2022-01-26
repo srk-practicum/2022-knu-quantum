@@ -1,0 +1,101 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb} 
+
+% set font encoding for PDFLaTeX, XeLaTeX, or LuaTeX
+\usepackage{ifxetex,ifluatex}
+\if\ifxetex T\else\ifluatex T\else F\fi\fi T%
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+\usepackage{hyperref}
+
+\title{NTRU Post-Quantum Encryption demo}
+\author{Aleksey Mokhonko}
+
+% Enable SageTeX to run SageMath code right inside this LaTeX file.
+% http://doc.sagemath.org/html/en/tutorial/sagetex.html
+\usepackage{sagetex}
+
+% Enable PythonTeX to run Python – https://ctan.org/pkg/pythontex
+% \usepackage{pythontex}
+
+\begin{document}
+\maketitle
+\section{Example from Wikipediaaa}
+\noindent Let us try to re-create \url{https://en.wikipedia.org/wiki/NTRUEncrypt}
+\noindent We use the following common parameters:
+\begin{sageblock}
+    N = 11; p = 3; q = 2^5
+\end{sageblock}
+\begin{sagesilent}
+Zx.<x> = ZZ[]
+T = Zx.change_ring(Integers(p)).quotient(x^N-1)
+f = -1 + x + x^2 - x^4 + x^6 + x^9 - x^10
+\end{sagesilent}
+Select random polynomial: 
+\[
+f=\sage{f}
+\]
+Check that polynomials $f_p$ and $f_q$ with the property $f\cdot f_p=1 (\mathrm{mod} p)$ 
+and $f\cdot f_q =1 (\mathrm{mod} q)$ exist.
+\subsection{balancedmod(f(x),q,N)}
+This is auxiliary helper function. It reduces every coefficient of a polynomial $f\in\mathbb{Z}[x]$ modulo $q$ with additional balancing, so the result coefficients are integers in interval $[-q/2, +q/2].$ More specifically:
+\begin{itemize}
+\item for an odd $q$ coefficients belong to $[-(q-1)/2, +(q-1)/2]$ 
+\item for an even $q$ coefficients belong to $[-q/2, +q/2-1]$
+\end{itemize}
+Finally the resulting polynomial is fit into $\mathbb{Z}[x]$ and returned.
+\begin{sageblock}
+def balancedmod(f,q,N):
+    g = list(((f[i] + q//2) % q) - q//2 for i in range(N))
+    Zx.<x> = ZZ[]
+    return Zx(g)
+\end{sageblock}
+Example:
+\[
+\mathrm{\mathrm{balancedmod}}(1+31x+32x^2+33x^3-x^4, 32, 11) = \sage{balancedmod(1+31*x+32*x^2+33*x^3-x^4, 32, 11)}
+\]
+
+\subsection{multiply(f(x), g(x), N)}
+The following function performs multiplication operation specific for NTRU, which works like a traditional polynomial multiplication with additional reduction of the result by $x^N-1$
+\begin{sageblock}
+def multiply(f,g,N):
+    return (f * g) % (x^N-1)
+\end{sageblock}
+
+\subsection{invertmodprime(f(x),p,N)}
+This routine calculates an inversion of a polynomial modulo $x^N-1$ 
+and then modulo $p$ with assumption that $p$ is prime number.
+Returns a polynomial $f_p\in\mathbb{Z}[x]$ such as $f\cdot f_p = 1(\mathrm{mod} p.$ 
+An exception is thrown if such polynomial $f_p\in\mathbb{Z}[x]$ does not exist.
+\begin{sageblock}
+def invertmodprime(f,p,N):
+    Zx.<x> = ZZ[]
+    # T is a quotient ring constructed from Z[x] 
+    # after its base being changed to Zp using ideal x^N-1.
+    T = Zx.change_ring(Integers(p)).quotient(x^N-1) 
+    # Lift function converts Zp[x]/x^N-1 back into Zp[x].
+    return Zx(lift(1 / T(f)))
+\end{sageblock}
+Example:
+\[
+f=\sage{f}, p=3, N=11
+\]
+\[
+f_p=\mathrm{invertmodprime(f,p,N)}=\sage{invertmodprime(f,p,N)}
+\]
+Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}. $\sage{f}$
+        
+\begin{thebibliography}{9}
+\bibitem{elena-mashkina}
+Implementation by Elena Mashkina \url{https://github.com/elena-mashkina/ntru/blob/master/NTRU.sage}
+\bibitem{elena-mashkina-explained}
+Explanation \url{https://cr.yp.to/talks/2018.11.16/slides-djb-20181116-lattice-a4.pdf}
+\end{thebibliography}
+
+\end{document}
