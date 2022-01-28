@@ -1,0 +1,8 @@
+\BOOKMARK [1][-]{section.1}{Example from Wikipediaaa}{}% 1
+\BOOKMARK [2][-]{subsection.1.1}{balancedmod\(f\(x\),q,N\)}{section.1}% 2
+\BOOKMARK [2][-]{subsection.1.2}{multiply\(f\(x\), g\(x\)\)}{section.1}% 3
+\BOOKMARK [2][-]{subsection.1.3}{invertmodprime\(f\(x\),p\)}{section.1}% 4
+\BOOKMARK [2][-]{subsection.1.4}{invertmodpowerof2\(f\(x\), q, N\)}{section.1}% 5
+\BOOKMARK [2][-]{subsection.1.5}{generate\137keys\(f, g\)}{section.1}% 6
+\BOOKMARK [2][-]{subsection.1.6}{encrypt\(message, public\137key\)}{section.1}% 7
+\BOOKMARK [2][-]{subsection.1.7}{decrypt\(encrypted\137message, secret\137key\)}{section.1}% 8
