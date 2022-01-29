@@ -1,0 +1,258 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb} 
+
+% set font encoding for PDFLaTeX, XeLaTeX, or LuaTeX
+\usepackage{ifxetex,ifluatex}
+\if\ifxetex T\else\ifluatex T\else F\fi\fi T%
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+\usepackage{hyperref}
+
+\title{NTRU Post-Quantum Encryption report}
+\author{Karina Ilchenko}
+
+% Enable SageTeX to run SageMath code right inside this LaTeX file.
+% http://doc.sagemath.org/html/en/tutorial/sagetex.html
+\usepackage{sagetex}
+
+% Enable PythonTeX to run Python – https://ctan.org/pkg/pythontex
+% \usepackage{pythontex}
+
+\begin{document}
+\maketitle
+
+\section{Example from Wikipedia}
+\noindent Let us try to re-create \url{https://en.wikipedia.org/wiki/NTRUEncrypt}
+\noindent We use the following common parameters:
+\begin{sageblock}
+    N = 11; p = 3; q = 2^5; d = 3
+\end{sageblock}
+\begin{sagesilent}
+Zx.<x> = ZZ[]
+T = Zx.change_ring(Integers(p)).quotient(x^N-1)
+f = -1 + x + x^2 - x^4 + x^6 + x^9 - x^10
+def find_degree(coefs_list):
+    for i in range(len(coefs_list)-1, -1, -1):
+        if coefs_list[i] != 0:
+            return i
+\end{sagesilent}
+Select random polynomial: 
+\[
+f=\sage{f}
+\]
+Check that polynomials $f_p$ and $f_q$ with the property $f\cdot f_p=1 (\mathrm{mod} p)$ 
+and $f\cdot f_q =1 (\mathrm{mod} q)$ exist.
+
+
+\subsection{balancedmod(f(x),q,N)}
+This is auxiliary helper function. It reduces every coefficient of a polynomial $f\in\mathbb{Z}[x]$ modulo $q$ with additional balancing, so the result coefficients are integers in interval $[-\frac{q}{2}, +\frac{q}{2}].$ More specifically:
+\begin{itemize}
+\item for an odd $q$ coefficients belong to $[-\frac{q-1}{2}, + \frac{q-1}{2} ]$ 
+\item for an even $q$ coefficients belong to $[-\frac{q}{2}, +\frac{q}{2}-1]$
+\end{itemize}
+Finally the resulting polynomial is fit into $\mathbb{Z}[x]$ and returned.
+\begin{sageblock}
+def balancedmod(f,q, N):
+    g = list(((f[i] + q//2) % q) - q//2 for i in range(N))
+    Zx.<x> = ZZ[]
+    return Zx(g)
+\end{sageblock}
+Example:
+\[
+\mathrm{\mathrm{balancedmod}}(1+31x+32x^2+33x^3-x^4, 32, 11) = \sage{balancedmod(1+31*x+32*x^2+33*x^3-x^4, 32, N)}
+\]
+
+
+\subsection{multiply(f(x), g(x), N)}
+The following function performs multiplication operation specific for NTRU, which works like a traditional polynomial multiplication with additional reduction of the result by $x^N-1$
+\begin{sageblock}
+def convolution(f,g, N):
+    return (f * g) % (x^N-1)
+\end{sageblock}
+
+
+\subsection{invertmodprime(f(x),p, N)}
+This routine calculates an inversion of a polynomial modulo $x^N-1$ 
+and then modulo $p$ with assumption that $p$ is prime number.
+Returns a polynomial $f_p\in\mathbb{Z}[x]$ such as $f\cdot f_p = 1(\mathrm{mod} p.$ 
+An exception is thrown if such polynomial $f_p\in\mathbb{Z}[x]$ does not exist.
+\begin{sageblock}
+def invertmodprime(f,p, N):
+  
+    Zq.<z> = PolynomialRing(Integers(p))
+    ZQphi.<Z> = Zq.quotient(z^N-1)
+    a = f % p
+    a = a.subs(x=z)
+    k = 0
+    b = 1*z^0
+    c = 0*z^0
+    f = a 
+    g = z^N-1
+    
+    assert a.gcd(g) in {i for i in range(p)}
+    
+    while True:
+        while list(f)[0] == 0:
+            f /= Z
+            c *= Z
+            k += 1        
+        if find_degree(list(f)) == 0:
+            b = 1/list(f)[0] * b
+            res = Z^(N-k) * b
+            return Zx(res.lift())       
+        if find_degree(list(f)) < find_degree(list(g)):
+            f, g = g, f
+            b, c = c, b       
+        u = list(f)[0] * (1/list(g)[0])
+        f -= u*g
+        b -= u*c
+        
+
+\end{sageblock}
+Example:
+\[
+f_p=\mathrm{invertmodprime(f,p, N)}=\sage{invertmodprime(f,p, N)}
+\]
+Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
+
+
+\subsection{invertmodpowerof2(f(x), q, N)}
+This routine calculates an inversion of a polynomial modulo $x^N-1$ 
+and then modulo $q$ with assumption that $q$ is a power of $2$.
+Returns a polynomial $f_q\in\mathbb{Z}[x]$ such as $f\cdot f_q = 1(\mathrm{mod} q.$ 
+An exception is thrown if such polynomial $f_q\in\mathbb{Z}[x]$ does not exist.
+\begin{sageblock}
+def invertmodpowerof2(f, p, N):
+    r = int(math.log(p, 2))
+    p = 2   
+    q = p
+    b = invertmodprime(f, p, N)
+    while q < p^r:
+        q = q^2
+        b = b * (2 - f*b) % q % (x^N-1)        
+    b = b % p^r % (x^N - 1)
+    return b
+\end{sageblock}
+Example:
+\[
+f_q=\mathrm{invertmodpowerof2(f,q, N)}=\sage{invertmodpowerof2(f,q, N)}
+\]
+Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}. 
+
+
+\subsection{generate\_keys(N, p, q, d, p1 = None, p2= None)}
+This function generates public and secret key using polynomials $f$ and $g$, with degree at most ${\displaystyle \ N-1} $  and with coefficients in $\{-1,0,1\}$.
+
+The polynomial ${\displaystyle {\textbf {f}}\in L_{f}}  $  must have inverses modulo $q$ and modulo $p$ (computed using the Euclidean algorithm). It means that ${\displaystyle \ {\textbf {f}}\cdot {\textbf {f}}_{p}=1{\pmod {p}}} $ and $ {\displaystyle \ {\textbf {f}}\cdot {\textbf {f}}_{q}=1{\pmod {q}}}  $.  
+The public key $\textbf {h}$ is generated computing the quantity. 
+${\displaystyle {\textbf {h}}=p{\textbf {f}}_{q}\cdot {\textbf {g}}{\pmod {q}}.}  $
+The secret key is a pair  $(f(x), g(x))$. We can choose or generate them.
+\begin{sagesilent}
+
+def generate_polynomial(d1, d2, N):
+    
+    result = [1]*d1 + [-1]*d2 + [0]*(N-d1-d2)
+    shuffle(result)
+    
+    return Zx(result)
+\end{sagesilent}
+
+\begin{sageblock}
+def generate_keys(N, p, q, d, p1=None, p2=None):
+
+    while True:
+        try:
+            # generate 2 random polynomials f and g 
+            f = p1 or generate_polynomial(d + 1, d, N)
+            g = p2 or generate_polynomial(d, d, N)
+        
+            f_q = invertmodpowerof2(f, q, N)
+
+            f_p = invertmodprime(f, p, N)
+            break
+
+        except:
+            pass
+
+    public_key = balancedmod(p * convolution(f_q, g, N), q, N)
+    secret_key = f, f_p
+
+    return public_key, secret_key
+
+\end{sageblock}
+
+Example: N = 11, p = 3 and q = 32 and therefore the polynomials f and g are of degree at most 10. (N, p, q) are known to everybody. Let polynomials are \\ $f(x) = -1+x+x^2-x^4+x^6+x^9-x^{10}$, $g(x)=-1+x^2+x^3+x^5-x^8-x^{10}$
+\begin{sagesilent}
+public_key, secret_key = generate_keys(N, p, q, 3,-1+x+x^2-x^4+x^6+x^9-x^10, -1+x^2+x^3+x^5-x^8-x^10)
+f = -1+x+x^2-x^4+x^6+x^9-x^10
+g = -1+x^2+x^3+x^5-x^8-x^10
+r = -1+x^2+x^3+x^4-x^5-x^7
+message = -1+x^3-x^4-x^8+x^9+x^10
+\end{sagesilent}
+\[
+public\_key=h=\sage{public_key}
+\]
+
+\subsection{encrypt(message, public\_key, N, p, q, d, r = None)}
+The ciphertext $\textbf {e}$ is
+${\displaystyle {\textbf {e}}={\textbf {r}}\cdot {\textbf {h}+\textbf{m}}{\pmod {q}}.} We can choose r or generate it. $
+\begin{sageblock}
+def encrypt(message, public_key, N, p, q, d, r = None):
+  
+    r = r or generate_polynomial(d, d-1, N)
+    return balancedmod(convolution(public_key,r, N) + message,q, N)
+
+\end{sageblock}
+Example. Let's choose message $\textbf{m}=-1+x^3-x^4-x^8+x^9+x^{10}$ and random polynomial $\textbf{r}=-1+x^2+x^3+x^4-x^5-x^7$
+\[
+\textbf{e}=\mathrm{encrypt(message, public\_key, N, p, q, d, r)} 
+\]
+//
+\[
+\textbf{e}=\sage{encrypt(message, public_key, N, p, q, d, r).change_ring(Integers(q))}
+\]
+
+
+\subsection{decrypt(encrypted\_message, secret\_key, , N, p, q, d)}
+Let's decrypt the message. $\textbf{a}=\textbf{f}\cdot \textbf{e} = p\textbf{r}\cdot \textbf{g} + \textbf{f} \cdot \textbf{m}$ (mod q). The next step will be to calculate \textbf{a} modulo p: $\textbf{b} = \textbf{a} = \textbf{f}\cdot \textbf{m} $ modulo p. $\textbf{c} = \textbf{f}_p \cdot \textbf{b} = \textbf{f}_p \cdot \textbf{f} \cdot \textbf{m}=\textbf{m} $ (mod p).
+\begin{sageblock}
+def decrypt(encrypted_message, secret_key, N, p, q, d):
+  
+    f,f_p = secret_key
+    
+    a = balancedmod(convolution(encrypted_message,f, N),q, N)
+     
+    return balancedmod(convolution(a,f_p, N),p, N)
+\end{sageblock}
+Example.
+\begin{sagesilent}
+
+encrypted_message=encrypt(message, public_key, N, p, q, d, r)
+a = convolution(encrypted_message,f, N) % 32
+\end{sagesilent}
+\[
+\textbf{a}=\mathrm{\textbf{f} \cdot \textbf{e}}=\sage{a}
+\]
+\[
+\textbf{b}=\mathrm{\textbf{a}}=\sage{balancedmod(a, p, N)}
+\]
+\[
+\textbf{c}=\sage{decrypt(encrypted_message, secret_key, N, p, q, d)}
+\]
+We got the original message. Congratulations !!!!!!
+
+
+\begin{thebibliography}{9}
+\bibitem{elena-mashkina}
+Implementation by Elena Mashkina \url{https://github.com/elena-mashkina/ntru/blob/master/NTRU.sage}
+\bibitem{elena-mashkina-explained}
+Explanation \url{https://cr.yp.to/talks/2018.11.16/slides-djb-20181116-lattice-a4.pdf}
+\end{thebibliography}
+
+\end{document}
