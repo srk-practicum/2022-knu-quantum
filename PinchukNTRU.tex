@@ -1,0 +1,250 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb} 
+
+% set font encoding for PDFLaTeX, XeLaTeX, or LuaTeX
+\usepackage{ifxetex,ifluatex}
+\if\ifxetex T\else\ifluatex T\else F\fi\fi T%
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+\usepackage{hyperref}
+
+\title{NTRU Post-Quantum Encryption}
+\author{Pinchuk Pavlo}
+
+% Enable SageTeX to run SageMath code right inside this LaTeX file.
+% http://doc.sagemath.org/html/en/tutorial/sagetex.html
+\usepackage{sagetex}
+
+% Enable PythonTeX to run Python – https://ctan.org/pkg/pythontex
+% \usepackage{pythontex}
+
+\begin{document}
+\maketitle
+\section{Example from Wikipedia}
+\noindent I want to re-create \url{https://en.wikipedia.org/wiki/NTRUEncrypt}
+\noindent This common parameters were used:
+\begin{sageblock}
+    N = 11; p = 3; q = 32
+\end{sageblock}
+\begin{sagesilent}
+Zx.<x> = ZZ[]
+T = Zx.change_ring(Integers(p)).quotient(x^N-1)
+f = -1 + x + x^2 - x^4 + x^6 + x^9 - x^10
+def findDegree(coefs_list):
+    len_ = len(coefs_list)
+    for i in range(len_ - 1, -1, -1):
+        if coefs_list[i] != 0:
+            return i
+          
+def compareDegrees(coefs_list1, coefs_list2):
+    cnt1 = 0
+    cnt2 = 0
+    len1 = len(coefs_list1)
+    len2 = len(coefs_list2)
+    for i in range(len1 - 1, -1, -1):
+        if coefs_list1[i] != 0:
+            cnt1 = i
+            break
+    for i in range(len2 - 1, -1, -1):
+        if coefs_list2[i] != 0:
+            cnt2 = i
+            break
+    return cnt1 < cnt2
+\end{sagesilent}
+Select polynomial: 
+\[
+f=\sage{f}
+\]
+We make sure that polynomials $f_q$ and $f_p$ with the property $f\cdot f_q =1 (\mathrm{mod} q)$  
+and $f\cdot f_p=1 (\mathrm{mod} p)$ exist.
+\subsection{balancedmod(f(x),q,N)}
+This helper function reduces every coefficient of a polynomial $f\in\mathbb{Z}[x]$ modulo $q$ with additional balancing, so the result coefficients are integers in interval $[-q/2, +q/2].$ More specifically:
+\begin{itemize}
+\item for an odd $q$ coefficients belong to $[-\frac{q-1}{2}, + \frac{q-1}{2} ]$ 
+\item for an even $q$ coefficients belong to $[-\frac{q}{2}, +\frac{q}{2}-1]$
+\end{itemize}
+Finally the resulting polynomial is fit into $\mathbb{Z}[x]$ and returned.
+\begin{sageblock}
+def balancedmod(f,q):
+    g = list(((f[i] + q//2) % q) - q//2 for i in range(N))
+    Zx.<x> = ZZ[]
+    return Zx(g)
+\end{sageblock}
+Example:
+\[
+\mathrm{\mathrm{balancedmod}}(1+31x+32x^2+33x^3-x^4, 32) = \sage{balancedmod(1+31*x+32*x^2+33*x^3-x^4, 32)}
+\]
+
+\subsection{multiply(f(x), g(x))}
+This function serves for multiplication operation specific for NTRU, which works like a traditional polynomial multiplication with additional reduction of the result by $x^N-1$
+\begin{sageblock}
+def convolution(f,g):
+    return (f * g) % (x^N-1)
+\end{sageblock}
+
+\subsection{invertmodprime(f(x),p)}
+This function calculates an inversion of a polynomial modulo $x^N-1$ 
+and then modulo $p$ with assumption that $p$ is prime number.
+Returns a polynomial $f_p\in\mathbb{Z}[x]$ such as $f\cdot f_p = 1(\mathrm{mod} p.$ 
+An exception is thrown if such polynomial $f_p\in\mathbb{Z}[x]$ does not exist.
+\begin{sageblock}
+def invertmodprime(f,p):
+    Zx.<x> = ZZ[]
+    Zq.<z> = PolynomialRing(Integers(p))
+    ZQphi.<Z> = Zq.quotient(z^N-1)
+    a = f % p
+    a = a.subs(x=z)
+    k = 0
+    b = 1*z^0
+    c = 0*z^0
+    f = a 
+    g = z^N-1
+    
+    if a.gcd(g) != 1:
+        raise Exception("inversion dosen't exist!")      
+    while True:
+        while list(f)[0] == 0:
+            f /= Z
+            c *= Z
+            k += 1        
+        if findDegree(list(f)) == 0:
+            b = 1/list(f)[0] * b
+            res = Z^(N-k) * b
+            return Zx(res.lift())       
+        if compareDegrees(list(f), list(g)):
+            f, g = g, f
+            b, c = c, b       
+        u = list(f)[0] * (1/list(g)[0])
+        f -= u*g
+        b -= u*c
+
+\end{sageblock}
+Example:
+\[
+f=\sage{f}, N=11, p=3
+\]
+\[
+f_p=\mathrm{invertmodprime(f,p)}=\sage{invertmodprime(f,p)}
+\]
+Note is the inverse from \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}. $\sage{f}$
+\subsection{invertmodpowerof2(f(x), q, N)}
+This function calculates an inversion of a polynomial modulo $x^N-1$ 
+and then modulo $q$ with assumption that $q$ is a power of $2$.
+\begin{sageblock}
+def invertmodpowerof2(f, p):
+    r = int(math.log(p, 2))
+    p = 2   
+    q = p
+    b = invertmodprime(f, p)
+    while q < p^r:
+        q = q^2
+        b = b * (2 - f*b) % q % (x^N-1)        
+    b = b % p^r % (x^N - 1)
+    return b
+\end{sageblock}
+Example:
+\[
+f=\sage{f}, N=11, p=3, q = 32
+\]
+\[
+f_q=\mathrm{invertmodpowerof2(f,q)}=\sage{invertmodpowerof2(f,q)}
+\]
+\subsection{generate\_keys(f, g)}
+In this section we will generate public and secret key. To generate the key pair two polynomials $f$ and $g$, with degree at most ${\displaystyle \ N-1} $  and with coefficients in $\{-1,0,1\}$ are required. They can be considered as representations of the residue classes of polynomials modulo ${\displaystyle \ X^{N}-1} $  in $R$.
+The polynomial ${\displaystyle {\textbf {f}}\in L_{f}}  $  must satisfy the additional requirement that the inverses modulo $q$ and modulo $p$ exist, which means that ${\displaystyle \ {\textbf {f}}\cdot {\textbf {f}}_{p}=1{\pmod {p}}} $ and $ {\displaystyle \ {\textbf {f}}\cdot {\textbf {f}}_{q}=1{\pmod {q}}}  $ must hold.
+The secret key is a pair of randomly generated polynomials $(f(x), g(x))$
+\begin{sagesilent}
+def validate_params():
+    if q > p and gcd(p,q) == 1:
+        return True
+    return False
+
+def generate_polynomial(d1, d2):
+    assert (d1 + d2) <= N       
+    
+    result = [1]*d1 + [-1]*d2 + [0]*(N-d1-d2)  
+    shuffle(result)
+    
+    return Zx(result)
+\end{sagesilent}
+\begin{sageblock}
+def generate_keys(polynomial_1 = None, polynomial_2= None):
+    if validate_params():
+        while True:
+            try:
+                if polynomial_1 is None or polynomial_2 is None:   
+
+                    f = generate_polynomial(d+1, d)
+                    g = generate_polynomial(d, d)
+                else:
+                    f = polynomial_1
+                    g = polynomial_2
+                
+                f_q = invertmodpowerof2(f,q)
+
+                f_p = invertmodprime(f,p)  
+                break
+        
+            except:
+                pass 
+    
+        public_key = balancedmod(p * convolution(f_q,g),q)
+
+        secret_key = f,f_p
+        return public_key,secret_key
+
+    else:
+        print("")
+
+\end{sageblock}
+\subsection{encrypt(message, public\_key)}
+Function to encrypt the message.
+\begin{sageblock}
+def encrypt(message, public_key, r):
+    return balancedmod(convolution(public_key,r) + message,q)
+\end{sageblock}
+Example. Let's choose message $\textbf{m}=-1+x^3-x^4-x^8+x^9+x^{10}$ and random polynomial $\textbf{r}=-1+x^2+x^3+x^4-x^5-x^7$
+\[
+\textbf{e}=\mathrm{encrypt(message, public\_key)}=\sage{encrypt(-1+x^3-x^4-x^8+x^9+x^10, public_key, -1+x^2+x^3+x^4-x^5-x^7).change_ring(Integers(q))}
+\]
+\subsection{decrypt(encrypted\_message, secret\_key)}
+Function to decrypt the message.
+\begin{sageblock}
+def decrypt(encrypted_message, secret_key):
+    f,f_p = secret_key
+    
+    a = balancedmod(convolution(encrypted_message,f),q)
+     
+    return balancedmod(convolution(a,f_p),p)
+\end{sageblock}
+Example.
+\begin{sagesilent}
+
+encrypted_message=encrypt(-1+x^3-x^4-x^8+x^9+x^10, public_key, -1+x^2+x^3+x^4-x^5-x^7)
+a = convolution(encrypted_message,f) % 32
+\end{sagesilent}
+\[
+\textbf{a}=\mathrm{\textbf{f} \cdot \textbf{e}}=\sage{a}
+\]
+after central lift
+\[
+\textbf{b}=\mathrm{\textbf{a}}=\sage{balancedmod(a, p)}
+\]
+\[
+\textbf{c}=\sage{decrypt(encrypted_message, secret_key)}
+\]
+We got the original message.
+\begin{thebibliography}{9}
+\bibitem{elena-mashkina}
+Implementation by Elena Mashkina \url{https://github.com/elena-mashkina/ntru/blob/master/NTRU.sage}
+\bibitem{elena-mashkina-explained}
+Explanation \url{https://en.wikipedia.org/wiki/NTRUEncrypt}
+\end{thebibliography}
+
+\end{document}
