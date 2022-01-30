@@ -1,0 +1,235 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb} 
+
+% set font encoding for PDFLaTeX, XeLaTeX, or LuaTeX
+\usepackage{ifxetex,ifluatex}
+\if\ifxetex T\else\ifluatex T\else F\fi\fi T%
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+\usepackage{hyperref}
+
+\title{NTRU Post-Quantum Encryption demo}
+\author{Aleksey Mokhonko}
+
+% Enable SageTeX to run SageMath code right inside this LaTeX file.
+% http://doc.sagemath.org/html/en/tutorial/sagetex.html
+\usepackage{sagetex}
+
+% Enable PythonTeX to run Python – https://ctan.org/pkg/pythontex
+% \usepackage{pythontex}
+
+\begin{document}
+\maketitle
+\section{Example from Wikipediaaa}
+\noindent Let us try to re-create \url{https://en.wikipedia.org/wiki/NTRUEncrypt}
+\noindent We use the following common parameters:
+\begin{sageblock}
+    N = 11; p = 3; q = 2^5 ; d = 11
+\end{sageblock}
+\begin{sagesilent}
+Zx.<x> = ZZ[]
+T = Zx.change_ring(Integers(p)).quotient(x^N-1)
+f = -1 + x + x^2 - x^4 + x^6 + x^9 - x^10
+g = -1 + x^2 + x^3 + x^5 - x^8 - x^10
+m=-1+x^3-x^4-x^8+x^9+x^10
+r=-1+x^2+x^3+x^4-x^5-x^7
+\end{sagesilent}
+Select random polynomial: 
+\[
+f=\sage{f}
+\]
+Check that polynomials $f_p$ and $f_q$ with the property $f\cdot f_p=1 (\mathrm{mod} p)$ 
+and $f\cdot f_q =1 (\mathrm{mod} q)$ exist.
+\subsection{balancedmod(f(x),q,N)}
+This is auxiliary helper function. It reduces every coefficient of a polynomial $f\in\mathbb{Z}[x]$ modulo $q$ with additional balancing, so the result coefficients are integers in interval $[-q/2, +q/2].$ More specifically:
+\begin{itemize}
+\item for an odd $q$ coefficients belong to $[-(q-1)/2, +(q-1)/2]$ 
+\item for an even $q$ coefficients belong to $[-q/2, +q/2-1]$
+\end{itemize}
+Finally the resulting polynomial is fit into $\mathbb{Z}[x]$ and returned.
+\begin{sageblock}
+def balancedmod(f,q,N):
+    g = list(((f[i] + q//2) % q) - q//2 for i in range(N))
+    Zx.<x> = ZZ[]
+    return Zx(g)
+\end{sageblock}
+Example:
+\[
+\mathrm{\mathrm{balancedmod}}(1+31x+32x^2+33x^3-x^4, 32, 11) = \sage{balancedmod(1+31*x+32*x^2+33*x^3-x^4, 32, 11)}
+\]
+
+\subsection{multiply(f(x), g(x), N)}
+The following function performs multiplication operation specific for NTRU, which works like a traditional polynomial multiplication with additional reduction of the result by $x^N-1$
+\begin{sageblock}
+def multiply(f,g,N):
+    return (f * g) % (x^N-1)
+\end{sageblock}
+
+\subsection{invertmodprime(f(x),p,N)}
+This routine calculates an inversion of a polynomial modulo $x^N-1$ 
+and then modulo $p$ with assumption that $p$ is prime number.
+Returns a polynomial $f_p\in\mathbb{Z}[x]$ such as $f\cdot f_p = 1(\mathrm{mod} p).$ 
+An exception is thrown if such polynomial $f_p\in\mathbb{Z}[x]$ does not exist.
+\begin{sageblock}
+def invertmodprime(f,p,N):
+    Zx.<x> = ZZ[]
+    # T is a quotient ring constructed from Z[x] 
+    # after its base being changed to Zp using ideal x^N-1.
+    T = Zx.change_ring(Integers(p)).quotient(x^N-1) 
+    # Lift function converts Zp[x]/x^N-1 back into Zp[x].
+    return Zx(lift(1 / T(f)))
+\end{sageblock}
+Example:
+\[
+f=\sage{f}, p=3, N=11
+\]
+\[
+f_p=\mathrm{invertmodprime(f,p,N)}=\sage{invertmodprime(f,p,N)}
+\]
+Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}. $\sage{f}$
+
+\subsection{invertmodpowerof2(f(x), q, N)}
+
+This function calculates an inversion of a polynomial modulo $x^N-1$
+and then modulo $q$ with assumption that $q$  is a power of 2. It returns a polynomial $f_q(x)\in\mathbb{Z}[x]$ such as $f\cdot f_q = 1(\mathrm{mod} q).$
+An exception is thrown if such polynomial $f_p\in\mathbb{Z}[x]$ does not exist.
+\begin{sageblock}
+def invertmodpowerof2(f,q,N):
+    a=2
+    b=invertmodprime(f, 2, N)
+    while a<q:
+        a=a^2
+        b=multiply(b, (2-multiply(f,b,N)),N)
+        f1=b.change_ring(Integers(a))
+    return b
+\end{sageblock}
+Example:
+\[
+f=\sage{f}, q=2^5, N=11
+\]
+\[
+f_q=\mathrm{invertmodpowerof2(f,q,N)}=\sage{invertmodpowerof2(f,q,N).change_ring(Integers(q))}
+\]
+
+
+\subsection{validateparams()}
+The following function checks params meet certain conditions: if $q$ is considerably larger than $p$
+        and if greatest common divider of $p$ and $q$ is $1$
+\begin{sageblock}
+def validateparams():
+    if q > p and gcd(p,q) == 1:
+        return True
+    return False
+\end{sageblock}
+
+
+\subsection {generatepolynomial(d,N)}
+The following function generates a random polynomial with d nonzero coefficients 
+returns Zx polynomial
+\begin{sageblock}
+def generatepolynomial(d,N):
+    assert d <= N
+    result = N*[0]
+    for j in range(d):  
+        while True:
+            r = randrange(N)    
+            if not result[r]: break
+        result[r] = 1-2*randrange(2) 
+    return Zx(result)
+\end{sageblock}
+
+
+\subsection{generatekeys()}
+The following function generates a public and private key pair, based on 
+provided parameters
+        returns Zx public key and a secret key as a tuple of Zx $f$ (private key) and Zx $F_p$
+\begin{sageblock}
+def generatekeys(N):
+    if validateparams():
+        while True:
+            try:
+                f = generatepolynomial(d,N)
+                g = generatepolynomial(d,N)
+                f_q = invertmodpowerof2(f,q)
+                f_p = invertmodprime(f,p,N)  
+                break
+            except:
+                pass 
+        public_key = balancedmod(p * multiply(f_q,g,N),q)
+        secret_key = f,f_p
+        return public_key,secret_key
+    else:
+        print("Provided params are not correct")
+
+\end{sageblock}
+
+
+\subsection{generatemessage()}
+The following function creates a polynomial from a random list of coefficients selected from a set $[-1,0,1]$ 
+        returns Zx polynomial
+\begin{sageblock}
+def generatemessage():
+    result = list(randrange(3) - 1 for j in range(N))
+    return Zx(result)
+\end{sageblock}
+
+
+
+
+\subsection{encrypt(message, publickey,r,N)}
+The following function performs encryption of a given message using a 
+provided public key
+        returns Zx encrypted message
+\begin{sageblock}
+def encrypt(message, publickey,r,N):
+    return balancedmod(multiply(publickey,r,N) + message,q,N)
+\end{sageblock}
+Example:
+\[
+m=\sage{m}
+\]
+\[
+r=\sage{-1+x^2+x^3+x^4-x^5-x^7}
+\]
+\[
+h=\mathrm{pf_q*g}=\sage{balancedmod(multiply(g,p*invertmodpowerof2(f,q,N),N),q,N)}
+\]
+\[
+e=\mathrm{r*h+m}=\sage{encrypt(m,balancedmod(multiply(g,p*invertmodpowerof2(f,q,N),N),q,N),r,N).change_ring(Integers(q))}
+\]
+
+
+
+
+
+\subsection{decrypt(encryptedmessage, f, fp,N)}
+The following function performs decryption of a given ciphertext using an own private key returns Zx decrypted message
+\begin{sageblock}
+def decrypt(encryptedmessage, f, f_p,N):
+    a = balancedmod(multiply(encryptedmessage,f,N),q,N)
+    return balancedmod(multiply(a,f_p,N),p,N)
+\end{sageblock}
+Example:
+\[
+a=\mathrm{f*e (\mathrm{mod} q)}=\sage{balancedmod(multiply(encrypt(m,balancedmod(multiply(g,p*invertmodpowerof2(f,q,N),N),q,N),r,N),f,N),q,N)}
+\]
+\[
+b=\mathrm{a (\mathrm{mod} p)}=\sage{balancedmod(balancedmod(multiply(encrypt(m,balancedmod(multiply(g,p*invertmodpowerof2(f,q,N),N),q,N),r,N),f,N),q,N),p,N)}
+\]
+\[
+ c=\sage{decrypt(encrypt(m,balancedmod(multiply(g,p*invertmodpowerof2(f,q,N),N),q,N),r,N), f, invertmodprime(f,p,N),N)}
+ \]
+
+\begin{thebibliography}{9}
+\bibitem{elena-mashkina}
+Implementation by Elena Mashkina \url{https://github.com/elena-mashkina/ntru/blob/master/NTRU.sage}
+\bibitem{elena-mashkina-explained}
+Explanation \url{https://cr.yp.to/talks/2018.11.16/slides-djb-20181116-lattice-a4.pdf}
+\end{thebibliography}
+\end{document}
