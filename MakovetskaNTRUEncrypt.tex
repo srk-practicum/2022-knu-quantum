@@ -1,0 +1,236 @@
+\documentclass{article}
+
+% set font encoding for PDFLaTeX, XeLaTeX, or LuaTeX
+\usepackage{ifxetex,ifluatex}
+\if\ifxetex T\else\ifluatex T\else F\fi\fi T%
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+\usepackage{hyperref}
+
+\title{NTRU Post-Quantum Encryption}
+\author{Kateryna Makovetska}
+
+% Enable SageTeX to run SageMath code right inside this LaTeX file.
+% http://doc.sagemath.org/html/en/tutorial/sagetex.html
+ \usepackage{sagetex}
+
+% Enable PythonTeX to run Python – https://ctan.org/pkg/pythontex
+% \usepackage{pythontex}
+
+\begin{document}
+\maketitle
+\section{Example from Wikipedia}
+Let's try to re-create  \url{https://en.wikipedia.org/wiki/NTRUEncrypt}.
+In this example the parameters (N, p, q) will have the values
+$N$ = 11
+$p$ = 3
+$q$ = $2^5$
+\begin{sagesilent}
+N = 11
+p = 3
+q = 32
+d = 3
+Zx.<x> = ZZ[]
+f = -1+x+x^2-x^4+x^6+x^9-x^10
+g = -1+x^2+x^3+x^5-x^8-x^10
+def find_degree(coefs_list):
+    for i in range(len(coefs_list)-1, -1, -1):
+        if coefs_list[i] != 0:
+            return i
+\end{sagesilent}
+The polynomials $f$ and $g$ are randomly chosen, so suppose they are represented by
+\noindent $f = -1+x+x^2-x^4+x^6+x^9-x^{10}$ \\
+\noindent $g = -1+x^2+x^3+x^5-x^8-x^{10}$
+
+\subsection{balancedmod(f,q)}
+This function reduces every coefficient of a $\mathbb{Z}[x]$ polynomial $f$ modulo $q$ with additional balancing, so the result coefficients are integers in interval $[-\frac{q}{2}, +\frac{q}{2}]$. More specifically: for an odd $q$ $[-\frac{q-1}{2}, +\frac{q-1}{2}]$, for an even $q$ $[-\frac{q}{2}, +\frac{q}{2}-1]$. It returns $\mathbb{Z}[x]$ reduced polynomial.
+
+\begin{sageblock}
+def balancedmod(f,q):
+    g = list(((f[i] + q//2) % q) - q//2 for i in range(N))
+    return Zx(g)
+\end{sageblock}
+Example:
+\[
+\mathrm{\mathrm{balancedmod}}(17+31x+34x^2+33x^3-8x^4, 32) = \sage{balancedmod(17+31*x+34*x^2+33*x^3-8*x^4, 32)}
+\]
+
+\subsection{multiply(f,g)}
+This function performs a multiplication operation specific for NTRU, which works like a traditional polynomial multiplication with additional reduction of the result by $x^N-1$ ($x^n$ is replaced by 1, $x^n-1$ by $x$, $x^n-2$ by $x^2$, ...) and returns  $\mathbb{Z}[x]$ polynomial
+\begin{sageblock}
+def convolution(f,g):
+    return (f * g) % (x^N-1)
+
+\end{sageblock}
+
+\subsection{invertmodprime(f,p)}
+This function calculates an inversion of a polynomial modulo $x^N-1$ and then modulo $p$ with assumption that $p$ is prime. Also it returns a $\mathbb{Z}[x]$ polynomial $h$ such as convolution of $h$ ~ $f$  = 1 $(mod $p$)$ and raises an exception if such $\mathbb{Z}[x]$  polynomial $h$ doesn't exist.
+\begin{sageblock}
+def invertmodprime(f,p):
+    Zq.<z> = PolynomialRing(Integers(p))
+    ZQphi.<Z> = Zq.quotient(z^N-1)
+    a = f % p
+    a = a.subs(x=z)
+    k = 0
+    b = 1*z^0
+    c = 0*z^0
+    f = a
+    g = z^N-1
+    assert a.gcd(g) in {i for i in range(p)}
+
+    while True:
+        while list(f)[0] == 0:
+            f = f / Z
+            c = c * Z
+            k += 1
+
+        if find_degree(list(f)) == 0:
+            b = 1/list(f)[0] * b
+            ans = Z^(N-k) * b
+            return Zx(ans.lift())
+
+        if find_degree(list(f)) < find_degree(list(g)):
+            f, g = g, f
+            b, c = c, b
+
+        u = list(f)[0] * (1/list(g)[0])
+        f = f - u*g
+        b = b - u*c
+
+\end{sageblock}
+
+\subsection{invertmodpowerof2(a, p)}
+This function calculates an inversion of a polynomial modulo $x^N-1$ and then modulo $q$ with assumption that $q$ is a power of $2$. Returns a polynomial $f_q\in\mathbb{Z}[x]$ such as $f\cdot f_q = 1(\mathrm{mod} q).$ 
+An exception is thrown if such polynomial $\mathbb{Z}[x]$ does not exist.
+\begin{sageblock}
+def invertmodpowerof2(a, p):
+    r = int(math.log(p, 2))
+    p = 2
+    q = p
+    b = invertmodprime(a, p)
+    while q < p^r:
+        q = q^2
+        b = b * (2 - a*b) % q % (x^N-1)
+
+    b = b % p^r % (x^N - 1)
+    return b
+\end{sageblock}
+
+Example:
+\[
+f=\sage{f}, p=3, N=11, q = 2^5
+\]
+\[
+f_q=\mathrm{invertmodpowerof2(f,q)}=\sage{invertmodpowerof2(f,q)}
+\]
+Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
+
+
+\begin{sagesilent}
+def validate_params():
+    if q > p and gcd(p,q) == 1:
+        return True
+    return False
+
+def generate_polynomial(d1, d2):
+    assert (d1 + d2) <= N
+    result = [1]*d1 + [-1]*d2 + [0]*(N-d1-d2)
+    shuffle(result)
+    return Zx(result)
+\end{sagesilent}
+
+\subsection{generate\_keys(poly1 = None, poly2 = None)}
+In this section we generate a public and secret key. Function generate\_keys(poly1 = None, poly2 = None) generates a public and private key pair, based on provided parameters. Returns $\mathbb{Z}[x]$ public key and a secret key as a tuple of $\mathbb{Z}[x]$ $f$ (private key) and $\mathbb{Z}[x]$ $F_p$
+\begin{sageblock}
+def generate_keys(poly1 = None, poly2= None):
+    if validate_params():
+        while True:
+            try:
+                if poly1 is None or poly2 is None:
+                    f = generate_polynomial(d+1, d)
+                    g = generate_polynomial(d, d)
+                else:
+                    f = poly1
+                    g = poly2
+                f_q = invertmodpowerof2(f,q)
+                f_p = invertmodprime(f,p)
+                break
+            except:
+                pass
+        public_key = balancedmod(p * convolution(f_q,g),q)
+        secret_key = f,f_p
+        return public_key,secret_key
+
+    else:
+        print("Provided params are not correct.")
+\end{sageblock}
+
+Example: In this example the parameters (N, p, q) will have the values $N$ = 11, $p$ = 3 and $q$ = 32 and therefore the polynomials $f$ and $g$ are of degree at most 10. The system parameters (N, p, q) are known to everybody. The polynomials are randomly chosen, so suppose they are represented by \\ $f(x) = -1+x+x^2-x^4+x^6+x^9-x^{10}$, $g(x)=-1+x^2+x^3+x^5-x^8-x^{10}$
+\begin{sagesilent}
+public_key, secret_key = generate_keys(-1+x+x^2-x^4+x^6+x^9-x^10, -1+x^2+x^3+x^5-x^8-x^10)
+
+\end{sagesilent}
+\[
+public\_key=\mathrm{get\_keys(f, g)}=\sage{public_key}
+\]
+
+\begin{sagesilent}
+def generate_message():
+    result = list(randrange(3) - 1 for j in range(N))
+    return Zx(result)
+\end{sagesilent}
+
+\subsection{encrypt(message, public\_key, r = None)}
+This function performs encryption of a given message using a provided public key
+ and returns $\mathbb{Z}[x]$ encrypted message.
+\begin{sageblock}
+def encrypt(message, public_key, r = None):
+    if r is None:
+        r = generate_polynomial(d, d-1)
+    return balancedmod(convolution(public_key,r) + message,q)
+\end{sageblock}
+
+Example. Let's choose message $\textbf{m}=-1+x^3-x^4-x^8+x^9+x^{10}$ and random polynomial $\textbf{r}=-1+x^2+x^3+x^4-x^5-x^7$
+\[
+\textbf{e}=\mathrm{encrypt(message, public\_key)}=\sage{encrypt(-1+x^3-x^4-x^8+x^9+x^10, public_key, -1+x^2+x^3+x^4-x^5-x^7).change_ring(Integers(q))}
+\]
+\subsection{decrypt(encrypted\_message, secret\_key)}
+Let's decrypt the message. $\textbf{a}=\textbf{f}\cdot \textbf{e} = p\textbf{r}\cdot \textbf{g} + \textbf{f} \cdot \textbf{m}$ (mod q). The next step will be to calculate \textbf{a} modulo p: $\textbf{b} = \textbf{a} = \textbf{f}\cdot \textbf{m} $ modulo p. $\textbf{c} = \textbf{f}_p \cdot \textbf{b} = \textbf{f}_p \cdot \textbf{f} \cdot \textbf{m}=\textbf{m} $ (mod p).
+This function performs decryption of a given ciphertext using an own private key. Returns $\mathbb{Z}[x]$ decrypted message
+\begin{sageblock}
+def decrypt(encrypted_message, secret_key):  
+    f,f_p = secret_key
+    a = balancedmod(convolution(encrypted_message,f),q)
+    return balancedmod(convolution(a,f_p),p)
+\end{sageblock}
+Example.
+\begin{sagesilent}
+encrypted_message=encrypt(-1+x^3-x^4-x^8+x^9+x^10, public_key, -1+x^2+x^3+x^4-x^5-x^7)
+a = convolution(encrypted_message,f) % 32
+\end{sagesilent}
+\[
+\textbf{a}=\mathrm{\textbf{f} \cdot \textbf{e}}=\sage{a}
+\]
+after central lift
+\[
+\textbf{b}=\mathrm{\textbf{a}}=\sage{balancedmod(a, p)}
+\]
+\[
+\textbf{c}=\sage{decrypt(encrypted_message, secret_key)}
+\]
+We got the original message!
+
+\begin{thebibliography}{9}
+\bibitem{elena-mashkina}
+Implementation by Elena Mashkina \url{https://github.com/elena-mashkina/ntru/blob/master/NTRU.sage}
+\bibitem{elena-mashkina-explained}
+Explanation \url{https://cr.yp.to/talks/2018.11.16/slides-djb-20181116-lattice-a4.pdf}
+\end{thebibliography}
+
+\end{document}
+
