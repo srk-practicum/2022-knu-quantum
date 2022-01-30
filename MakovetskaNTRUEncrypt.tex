@@ -1,4 +1,6 @@
 \documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
 
 % set font encoding for PDFLaTeX, XeLaTeX, or LuaTeX
 \usepackage{ifxetex,ifluatex}
@@ -48,7 +50,11 @@ The polynomials $f$ and $g$ are randomly chosen, so suppose they are represented
 \noindent $g = -1+x^2+x^3+x^5-x^8-x^{10}$
 
 \subsection{balancedmod(f,q)}
-This function reduces every coefficient of a $\mathbb{Z}[x]$ polynomial $f$ modulo $q$ with additional balancing, so the result coefficients are integers in interval $[-\frac{q}{2}, +\frac{q}{2}]$. More specifically: for an odd $q$ $[-\frac{q-1}{2}, +\frac{q-1}{2}]$, for an even $q$ $[-\frac{q}{2}, +\frac{q}{2}-1]$. It returns $\mathbb{Z}[x]$ reduced polynomial.
+This function reduces every coefficient of a $\mathbb{Z}[x]$ polynomial $f$ modulo $q$ with additional balancing, 
+so the result coefficients are integers in interval $[-\frac{q}{2}, +\frac{q}{2}]$. 
+More specifically: for an odd $q$ $\left(-\frac{q-1}{2}, +\frac{q-1}{2}\right]$, 
+for an even $q$ $\left(-\frac{q}{2}, +\frac{q}{2}-1\right]$. 
+It returns $\mathbb{Z}[x]$ reduced polynomial.
 
 \begin{sageblock}
 def balancedmod(f,q):
@@ -69,7 +75,7 @@ def convolution(f,g):
 \end{sageblock}
 
 \subsection{invertmodprime(f,p)}
-This function calculates an inversion of a polynomial modulo $x^N-1$ and then modulo $p$ with assumption that $p$ is prime. Also it returns a $\mathbb{Z}[x]$ polynomial $h$ such as convolution of $h$ ~ $f$  = 1 $(mod $p$)$ and raises an exception if such $\mathbb{Z}[x]$  polynomial $h$ doesn't exist.
+This function calculates an inversion of a polynomial modulo $x^N-1$ and then modulo $p$ with assumption that $p$ is prime. Also it returns a $\mathbb{Z}[x]$ polynomial $h$ such as convolution of $h \sim f$  = 1 $(\mathrm{mod}\ $p$)$ and raises an exception if such $\mathbb{Z}[x]$  polynomial $h$ doesn't exist.
 \begin{sageblock}
 def invertmodprime(f,p):
     Zq.<z> = PolynomialRing(Integers(p))
@@ -103,6 +109,17 @@ def invertmodprime(f,p):
         b = b - u*c
 
 \end{sageblock}
+Exampe:
+\begin{sageblock}
+    ff = x^4+1
+    #Zp.<x> = PolynomialRing(Integers(3))
+    #Zphi.<X> = Zp.quotient(x^11-1)
+    #print("Expected: ", 1/Zphi(ff))
+    gg = invertmodprime(ff, 3)
+    dd = (ff * gg) % (x^11-1)
+    dd = dd.change_ring(Integers(3))
+\end{sageblock}
+gg is: $\sage{gg},$ then ff MUL gg = $\sage{dd}$
 
 \subsection{invertmodpowerof2(a, p)}
 This function calculates an inversion of a polynomial modulo $x^N-1$ and then modulo $q$ with assumption that $q$ is a power of $2$. Returns a polynomial $f_q\in\mathbb{Z}[x]$ such as $f\cdot f_q = 1(\mathrm{mod} q).$ 
@@ -119,6 +136,8 @@ def invertmodpowerof2(a, p):
 
     b = b % p^r % (x^N - 1)
     return b
+
+ggg = ((invertmodpowerof2(f,q) * f) % (x^11-1)).change_ring(Integers(2^5))
 \end{sageblock}
 
 Example:
@@ -127,6 +146,9 @@ f=\sage{f}, p=3, N=11, q = 2^5
 \]
 \[
 f_q=\mathrm{invertmodpowerof2(f,q)}=\sage{invertmodpowerof2(f,q)}
+\]
+\[
+f * f_q = \sage{ggg}    
 \]
 Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
 
