@@ -1,0 +1,303 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% set font encoding for PDFLaTeX, XeLaTeX, or LuaTeX
+\usepackage{ifxetex,ifluatex}
+\if\ifxetex T\else\ifluatex T\else F\fi\fi T%
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+\usepackage{hyperref}
+
+\title{NTRU Encryption}
+\author{Maksym Pushkar}
+
+% Enable SageTeX to run SageMath code right inside this LaTeX file.
+% http://doc.sagemath.org/html/en/tutorial/sagetex.html
+\usepackage{sagetex}
+
+% Enable PythonTeX to run Python – https://ctan.org/pkg/pythontex
+% \usepackage{pythontex}
+
+\begin{document}
+\maketitle
+\section{Example from Wikipediaaa}
+\noindent Let us try to re-create \url{https://en.wikipedia.org/wiki/NTRUEncrypt}
+\noindent We use the following common parameters:
+
+\begin{sageblock}
+    N = 11; p = 3; q = 2^5; d = 3
+\end{sageblock}
+
+
+\begin{sagesilent}
+Zx.<x> = ZZ[]
+# T = Zx.change_ring(Integers(p)).quotient(x^N-1)
+f = -1 + x + x^2 - x^4 + x^6 + x^9 - x^10
+\end{sagesilent}
+
+Select random polynomial: 
+\[
+f=\sage{f}
+\]
+Check that polynomials $f_p$ and $f_q$ with the property $f\cdot f_p=1 (\mathrm{mod} p)$ 
+and $f\cdot f_q =1 (\mathrm{mod} q)$ exist.
+
+\subsection{balancedmod(f(x),p)}
+This is auxiliary helper function. It reduces every coefficient of a polynomial $f\in\mathbb{Z}[x]$ modulo $p$ with additional balancing, so the result coefficients are integers in interval $(-p/2, +p/2]$.
+Finally the resulting polynomial is fit into $\mathbb{Z}[x]$ and returned.
+
+\begin{sageblock}
+def balancedmod(f,p):
+    coef = []
+    for i in range(N):
+        new_coef = ((f[i] + p//2) % p) - p//2
+        if new_coef == -p//2:
+            new_coef = p//2
+        coef.append(new_coef)
+    return Zx(coef)
+\end{sageblock}
+
+
+Example:
+\[
+\mathrm{\mathrm{balancedmod}}(1+31x+32x^2+33x^3-x^4, 32) = \sage{balancedmod(1+31*x+32*x^2+33*x^3-x^4, 32)}
+\]
+
+
+
+
+\subsection{modp(f(x),p)}
+This is auxiliary helper function. It reduces every coefficient of a polynomial $f\in\mathbb{Z}[x]$ modulo $p$ but unlike the previous one  without additional balancing, so the result coefficients are integers in interval $[0, p)$.
+Finally the resulting polynomial is fit into $\mathbb{Z}[x]$ and returned.
+
+\begin{sageblock}
+def modp(f, p):
+    Zp.<z> = PolynomialRing(Integers(p))
+    f1 = Zx(Zp(f))
+    return f1
+\end{sageblock}
+
+
+\subsection{mult(f(x), g(x))}
+The following function performs multiplication operation specific for NTRU, which works like a traditional polynomial multiplication with additional reduction of the result by $x^N-1$
+\begin{sageblock}
+def mult(f,g):
+    return (f * g) % (x^N-1)
+\end{sageblock}
+
+
+
+\subsection{inverse\textunderscore mod\textunderscore prime(f(x),p)}
+This routine calculates an inversion of a polynomial modulo $x^N-1$ 
+and then modulo $p$ with assumption that $p$ is prime number.
+Returns a polynomial $f_p\in\mathbb{Z}[x]$ such as $f\cdot f_p = 1(\mathrm{mod} p).$
+An exception is thrown if such polynomial $f_p\in\mathbb{Z}[x]$ does not exist.
+
+
+
+\begin{sageblock}
+def inverse_mod_prime(f,p):
+    Zp.<z> = PolynomialRing(Integers(p))
+    ZPphi.<Z> = Zp.quotient(z^N - 1)
+    fp = Zx(lift(1 / ZPphi(f)))
+    return fp
+\end{sageblock}
+
+
+Example:
+\[
+f=\sage{f}, \ p=3, \ N=11
+\]
+\[
+f_p=\sage{inverse_mod_prime(f,p)}
+\]
+Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
+
+
+
+
+\subsection{inverse\textunderscore mod\textunderscore power2(f(x),q)}
+This routine calculates an inversion of a polynomial modulo $x^N-1$
+and then modulo $q$ with assumption that $q$ is the power of $2$.
+Returns a polynomial $f_q\in\mathbb{Z}[x]$ such as $f\cdot f_q = 1(\mathrm{mod} q).$
+An exception is thrown if such polynomial $f_q\in\mathbb{Z}[x]$ does not exist.
+
+\begin{sageblock}
+def inverse_mod_power2(f, q):
+    t = 2
+    f1 = inverse_mod_prime(f, 2)
+    while True:
+        if t >= q:
+            Zq.<z> = PolynomialRing(Integers(q))
+            f1 = Zx(Zq(f1))
+            return f1
+        else:
+            t = t**2
+            f1 = mult(f1, (2 - mult(f, f1)))
+            f1 = modp(f1, t)
+\end{sageblock}
+
+
+Example:
+\[
+f=\sage{f}, \ q=32, \ N=11
+\]
+\[
+f_q=\sage{inverse_mod_power2(f,q)}
+\]
+Note that this is exactly the inverse mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
+
+
+
+
+
+\subsection{keys(p,q)}
+
+This function generates private and public keys with given $p, q$. It tries a random $f, g$, and if an inverse does not exist, it returns None and prints "inverse doesn't exist, try another f"
+
+\begin{sageblock}
+def keys(p, q):
+    
+    # f = random_gen(d + 1, d)
+    # g = random_gen(d, d)
+    
+    f = -1 + x + x^2 -x^4 + x^6+ x^9- x^10
+    g = -1 + x^2 + x^3 + x^5 -x^8 -x^10
+    
+    try:
+        fp = inverse_mod_prime(f, p)
+        fq = inverse_mod_power2(f, q)
+        
+        h = mult((p * fq), g)
+        h = modp(h, q)
+        h = balancedmod(h,q)
+        
+        public_key = h
+        private_key = (f, fp)
+        
+        return public_key, private_key
+        
+    except ZeroDivisionError:
+        print("inverse doesn\'t exist, try another f")
+        return None
+\end{sageblock}
+
+Example:
+\[
+f = \sage{f}, g = \sage{-1 + x^2 + x^3 + x^5 -x^8 -x^10}
+\]
+\[
+p = 3, q = 32
+\]
+\[
+h = \sage{keys(p, q)[0]}
+\]
+\[
+[f, f_p] = [\sage{keys(p, q)[1][0]}, \sage{keys(p, q)[1][1]}]
+\]
+Note that this is exactly the result mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
+
+
+
+
+
+
+
+\subsection{encryption(m, public key, p, q)}
+
+This function generates an encrypted message with given massage, public key, $p, q$.
+
+\begin{sageblock}
+def encryption(m, public_key, p, q):
+    m = balancedmod(m,p)
+    
+    # r = random_gen(d, d)
+    r = -1 + x^2 + x^3 + x^4 - x^5 - x^7
+    
+    h = public_key
+    
+    e = mult(r, h) + m
+    e = modp(e, q)
+    
+    return e
+\end{sageblock}
+
+Example:
+\begin{sagesilent}
+h = keys(p, q)[0]
+m = -1 + x^3 -x^4 -x^8 + x^9 +x^10
+r = -1 + x^2 + x^3 + x^4 - x^5 - x^7
+e = encryption(m, h, p, q)
+\end{sagesilent}
+
+
+\[
+h = \sage{h}
+\]
+\[
+m = \sage{m}, p = 3, q = 32
+\]
+\[
+r = \sage{r}
+\]
+\[
+e = \sage{e}
+\]
+
+Note that this is exactly the result mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
+
+
+
+
+\subsection{encryption(m, public key, p, q)}
+
+This function returns decrypted message with given encrypted massage, private key, $p, q$.
+
+\begin{sageblock}
+def decryption(e, private_key, p, q):
+    f, fp = private_key[0], private_key[1]
+    
+    a = balancedmod(mult(f, e), q)
+    print(a)
+    b = balancedmod(a, p)
+    print(b)
+    c = balancedmod(mult(b, fp), p)
+    return c
+\end{sageblock}
+
+Example:
+\begin{sagesilent}
+fp = inverse_mod_prime(f,p)
+pr = [f, fp]
+m = decryption(e, pr, p, q)
+\end{sagesilent}
+
+\[
+e = \sage{e}
+\]
+\[
+m = \sage{m}
+\]
+
+Note that this is exactly the result mentioned in \href{https://en.wikipedia.org/wiki/NTRUEncrypt}{Wikipedia - NTRU}.
+
+
+
+
+
+
+
+\begin{thebibliography}{9}
+\bibitem{elena-mashkina}
+Implementation by Elena Mashkina \url{https://github.com/elena-mashkina/ntru/blob/master/NTRU.sage}
+\bibitem{elena-mashkina-explained}
+Explanation \url{https://cr.yp.to/talks/2018.11.16/slides-djb-20181116-lattice-a4.pdf}
+\end{thebibliography}
+
+\end{document}
